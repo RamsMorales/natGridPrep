@@ -102,22 +102,77 @@ null_dates.index = pd.to_datetime(null_dates.index)
 # first 4 years based on what is said here:
 # https://blog.drhongtao.com/2016/07/gefcom2012-load-forecasting-data.html
 
-# TODO:
-# - setup the STL decomposition
-# - descriptive statistivs appropriate? I think maybe for the response once aggregated.
 
 ## STL decomposition
 # print(z1_timestamp_shcema.describe())
 project_data = (
-    z1_timestamp_shcema.filter(
-        pl.col("ds").is_between(pl.date(2004, 4, 4), pl.date(2008, 4, 5), closed="left")
+    (
+        z1_timestamp_shcema.filter(
+            pl.col("ds").is_between(
+                pl.date(2004, 4, 4), pl.date(2008, 4, 5), closed="left"
+            )
+        )
     )
-).sort("ds").drop_nulls()
+    .sort("ds")
+    .drop_nulls()
+)
 
-mstl = MSTL(project_data.to_pandas()["load"],periods=(24,168,8760))
-res = mstl.fit()
-res.plot()
-plt.tight_layout()
-plt.show()
+# mstl = MSTL(project_data.to_pandas()["load"],periods=(24,168,8760))
+# res = mstl.fit()
+# res.plot()
+# plt.tight_layout()
+# plt.savefig("figs/mstl.png", dpi=150)
+# plt.show()
 
+## Expanding EDA to see trends better
 
+### Monthly average load over time
+
+rolling_monthly_average = project_data.with_columns(
+    rolling_mean=pl.col("load").rolling_mean_by(
+        "ds", window_size="1mo", min_samples=28
+    )  # added min_samples to account for non leap year. This way full
+    # month is included. I have not put to much thought into wether this
+    # matters or not though.
+).drop_nulls()
+
+trend_diagnostic_plot = (
+    ggplot(rolling_monthly_average, aes(x="ds", y="rolling_mean"))
+    + geom_line()
+    + geom_hline(
+        yintercept=rolling_monthly_average.select(pl.mean("rolling_mean")),
+        linetype="dashed",
+        color="orange",
+    )
+    + labs(x="Date", y="Monthly Rolling average load")
+)
+
+# trend_diagnostic_plot.show()
+
+### Monthly peak load by year
+monthly_peak_load_df = project_data.group_by_dynamic(
+    "ds",
+    every="1mo",
+    closed="both"
+).agg(
+    pl.col("load").max()
+)
+
+monthly_peak_load_df.show()
+
+"""
+Two things: -----scratch that 3
+1) doing this daily is sick! seems language like in that you start to synthesize the syntax  like you do with sentences. vocab build then new sentances spawn in context despite a given permutation of words not necessarily encountered previously. XD
+2) polars is EFFFINGGG SIIIICCKKK!! seems to make solving common problems 
+easy enough.
+3) I think that the remaining skill is a bit higher order. Engineering seems to come with practice, (I am not implying that this will be trivial. In fact, I think that it follows in the same way that modeling does. You kinda need to build a vocabulary and understand the properties in the same way. Its just that modeling is less salient. I can read the docs on the lib and figure out a solution from examples. I imagine the modelling skill will build the same way, but modelling is documented via papers and encapsulated in academic language that, although captures important nuances, increases the friction to learning it) but modeling decisions, design takes a little bit of domain know how from my perspective, a bit of experience understanding what questions to ask and what view of the data will get you what you want. Also, some detective work to understand how to handle your instance. Next, having some math background and understanding of the properties of the tools, may elevate the modeling skills. In conclusion, I would like to deepen the math and engineering skills as well as practice more modeling problems in context. I think that may be the biggest lever at getting good at this. For the internship and working in general, it may help to learn from more senior data scientists. I don't know how to build that kind of mentorship relationship tho..... 
+"""
+monthly_peak_load_plot = ggplot(
+    data= monthly_peak_load_df,
+    aes(x ="ds",y="load")
+)
+
+# TODO:
+# - finish this plot
+# - pivot df to make into separate  years to categorize for box plot
+# - figure out the index that lets me separate into series and response 
