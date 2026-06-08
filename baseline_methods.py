@@ -17,6 +17,9 @@ from statsforecast.models import (
 from utilsforecast.losses import mae, mape, rmse
 from utilsforecast.evaluation import evaluate
 
+import statsmodels.api as sm
+from statsmodels.graphics.tsaplots import plot_acf
+
 database_connection = duckdb.connect("gefcom.duckdb")
 
 load_table = database_connection.execute(
@@ -72,21 +75,68 @@ if __name__ == "__main__":
         .reset_index()
     )
 
-    print(error_metrics)
-    mae_plot = (
-        ggplot(error_metrics, aes(x="Method", fill="Method"))
-        + geom_col(aes(y="mae"))
-    )
+    ## Residual diagnositics on the predictors
+    # facet_length = len(methods) / 2 if len(methods) % 2 == 0 else len(methods) // 2 + 1
+    forecaster.forecast(h=2280, fitted=True, df=train.to_pandas())
+    fitted = forecaster.forecast_fitted_values()
+    # print(fitted.isna().sum()) # note to self: if you encounter NaN check the count and see if there is
+    # a pattern
 
-    mape_plot = (
-        ggplot(error_metrics, aes(x="Method", fill="Method"))
-        + geom_col(aes(y="mape"))
-    )
+    resid_names = []
 
-    rmse_plot = (
-        ggplot(error_metrics, aes(x="Method", fill="Method"))
-        + geom_col(aes(y="rmse"))
-    )
-mae_plot.show()
-mape_plot.show()
-rmse_plot.show()
+    for method in forecaster.models:
+        name = str(method)
+        fitted[f"resid_{name}"] = fitted["y"] - fitted[name]
+        resid_names.append(f"resid_{name}")
+
+    ### Histogram of residuals for each method
+    for residuals in resid_names:
+        histogram = (
+            ggplot(data=fitted, mapping=aes(x=residuals))
+            + geom_histogram(fill="blue", colour="black")
+            + labs(x="", y="", title=f"Residuals for {residuals}")
+        )
+        histogram.show()
+
+        ### ACF Plots for the residuals looking for them to not have autocorrelation
+        acf_resid = fitted[f"{residuals}"]
+        if np.any(acf_resid):
+            acf_resid = acf_resid.dropna()
+
+        acf_plot = plot_acf(
+            x=acf_resid,
+            zero=False,
+            auto_ylims=True,
+            bartlett_confint=False,
+            title=f"{residuals} - ACF plot",
+        )
+
+        acf_plot.show()
+
+        ### residuals time series plot
+        ts_plot_resid = (
+            ggplot(data=fitted, mapping=aes(x="ds", y=residuals))
+            + geom_line()
+            + labs(x="", y="", title=f"Residuals for {residuals}")
+        )
+        ts_plot_resid.show()
+
+
+#     print(error_metrics)
+#     mae_plot = (
+#         ggplot(error_metrics, aes(x="Method", fill="Method"))
+#         + geom_col(aes(y="mae"))
+#     )
+
+#     mape_plot = (
+#         ggplot(error_metrics, aes(x="Method", fill="Method"))
+#         + geom_col(aes(y="mape"))
+#     )
+
+#     rmse_plot = (
+#         ggplot(error_metrics, aes(x="Method", fill="Method"))
+#         + geom_col(aes(y="rmse"))
+#     )
+# mae_plot.show()
+# mape_plot.show()
+# rmse_plot.show()
